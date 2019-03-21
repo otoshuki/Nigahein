@@ -1,4 +1,4 @@
-from imutils import face_utils
+#Import libraries
 import cv2.aruco as aruco
 import numpy as np
 import imutils
@@ -9,65 +9,82 @@ import time
 import serial
 import struct
 
+#Intitlize the face detector
 detector = dlib.get_frontal_face_detector()
+#Intitialize the face landmark predictor
 predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
-
-cap = cv2.VideoCapture(1)
-cam = cv2.VideoCapture(2)
+#Turn on the webuser_cams
+face_cam = cv2.Videoface_camture(1)
+user_cam = cv2.Videoface_camture(2)
+#Set up the serial port-port can change
 arduino = serial.Serial('/dev/ttyACM0', 9600)
+#Set up the dictionary for Aruco marker
 aruco_dict = aruco.Dictionary_get(aruco.DICT_6X6_250)
 #Get the params for the dictionary
 params = aruco.DetectorParameters_create()
+#Global variables for control signal
 delay = 0
 trigger = 0
+#Global variables to store pupil location history
 past_values_x = []
+past_values_y = []
+
 def min_intensity_x(img):
+	"""
+	Credits to Tobias Roeddiger - https://github.com/TobiasRoeddiger/
+	A function to find the pupil location along x axis by finding minimum intensities
+	Input: img: the cropped eye
+	Output: returns the pupil location along x
+	"""
+	#Convert to grayscale
 	img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-	min_sum_y = 255 * len(img)
-	min_index_x = -1
-
+	#Set maximum as initial guess
+	min_sum = 255 * len(img)
+	min_index = -1
 	for x in range(len(img[0])):
-
-		temp_sum_y = 0
-
+		temp_sum = 0
+		#Sum up all the intensities along x
 		for y in range(len(img)):
-			temp_sum_y += img[y][x]
-
-		if temp_sum_y < min_sum_y:
-			min_sum_y = temp_sum_y
-			min_index_x = x
-
-	past_values_x.append(min_index_x)
-
+			temp_sum += img[y][x]
+		#Select the minimum intensity as the present guess
+		if temp_sum < min_sum:
+			min_sum = temp_sum
+			min_index = x
+	#Append to the previously determined values
+	past_values_x.append(min_index)
+	#Remove values more than 3 frames old
 	if len(past_values_x) > 3:
 		past_values_x.pop(0)
-
+	#Get the average along the readings to get better accuracy
 	return int(sum(past_values_x) / len(past_values_x))
 
-past_values_y = []
 def min_intensity_y(img):
+	"""
+	Credits to Tobias Roeddiger - https://github.com/TobiasRoeddiger/
+	A function to find the pupil location along y axis by finding minimum intensities
+	Input: img: the cropped eye
+	Output: returns the pupil location along y
+	"""
+	#Convert to grayscale
 	img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-	min_sum_x = 255 * len(img[0])
-	min_index_y = -1
-
+	#Set maximum as initial guess
+	min_sum = 255 * len(img[0])
+	min_index = -1
 	for y in range(len(img)):
-
-		temp_sum_x = 0
-
+		temp_sum = 0
+		#Sum up all the intensities along x
 		for x in range(len(img[0])):
-			temp_sum_x += img[y][x]
-
-		if temp_sum_x < min_sum_x:
-			min_sum_x = temp_sum_x
-			min_index_y = y
-
-	past_values_y.append(min_index_y)
-
+			temp_sum += img[y][x]
+		#Select the minimum intensity as the present guess
+		if temp_sum < min_sum:
+			min_sum = temp_sum
+			min_index = y
+	#Append to the previously determined values
+	past_values_y.append(min_index)
+	#Remove values more than 3 frames old
 	if len(past_values_y) > 3:
 		past_values_y.pop(0)
-
+	#Get the average along the readings to get better accuracy
 	return int(sum(past_values_y) / len(past_values_y))
 
 def extract_eye(image, left, bottom_left, bottom_right, right, upper_right, upper_left):
@@ -119,15 +136,15 @@ def sector(theta):
 
 while(True):
 	# load the input image, resize it, and convert it to grayscale
-	_, image = cap.read()
+	_, image = face_cam.read()
 	image = np.rot90(image, 2)
-	_, frame = cam.read()
+	_, frame = user_cam.read()
 	image = imutils.resize(image, width=500)
 	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	gray2 = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 	corners, ids, rejected = aruco.detectMarkers(gray2, aruco_dict,parameters = params)
 	# detect faces in the grayscale image
-	rects = detector(gray, 1)
+	detected_faces = detector(gray, 1)
 	control_shape = frame.shape
 	#Detect ArUco marker
 	detected = aruco.drawDetectedMarkers(frame, corners)
@@ -142,12 +159,12 @@ while(True):
 		marker_polar = conv2polar(marker_coor)
 		marker_sector = sector(marker_polar[1])
 	# loop over the face detections
-	for (i, rect) in enumerate(rects):
+	for (i, rect) in enumerate(detected_faces):
 		# determine the facial landmarks for the face region, then
 		# convert the facial landmark (x, y)-coordinates to a NumPy
 		# array
 		shape = predictor(gray, rect)
-		shape = face_utils.shape_to_np(shape)
+		shape = imutils.face_utils.shape_to_np(shape)
 		count = 1
 		eye_out, centerx, centery = extract_eye(image, shape[36], shape[41], shape[40], shape[39], shape[38], shape[37])
 		right_eye = imutils.resize(eye_out, width=100, height=50)
@@ -190,7 +207,7 @@ while(True):
 		if eye_sector == marker_sector:
 			if delay == 0: delay = time.time()
 			check = time.time() - delay
-			print('Watching')
+			print('Watching')trigger
 			if check > 1:
 				#Flip Switch
 				if trigger == 0: #Off before
